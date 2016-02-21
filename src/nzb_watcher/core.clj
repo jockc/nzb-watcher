@@ -104,9 +104,9 @@
   
 (defn backfill
   "search back in category for all files matching a include regex.  (assumes tv show).  find most downloaded per season/episode and download it.  record what was downloaded"
-  [include-id & {:keys [cat] :or {cat "5040"}}]
+  [include-id & {:keys [cat service] :or {cat "5040"}}]
   (let [query-string (get-query-string include-id)]
-    (letfn [(get [offs] (api/browse-nzbs cat offs :q query-string :ext true))]
+    (letfn [(get [offs] (api/browse-nzbs cat offs :q query-string :ext true :service service))]
       (let [eps (loop [eps []
                        offs 0]
                   (let [current (get offs)]
@@ -119,6 +119,7 @@
             grouped (group-by (comp first :episode) untried)
             chosen (reduce (fn [eps group]
                              (conj eps (first (sort-by (comp parse-int :grabs) > group)))) [] (vals grouped))]
+        (cl-format true "chosen count is ~a~%" (count chosen))
         
         (doseq [nzb chosen]
           (let [{:keys [title link]} nzb]

@@ -14,6 +14,11 @@
 (def last-call (atom (t/date-time 1990)))
 (def wait-ms 2000)
 
+(def api-cred {:nzbsu ["https://api.nzb.su" "resources/nzbsu_api.txt"]
+               :oznzb ["https://api.oznzb.com", "resources/oznzb_api.txt"]})
+
+(def api-default :nzbsu)
+
 (defn throttled-action
   "perform and action but only once per wait-ms.  this is needed because some APIs (eg nzb.su) choke if you request too quickly "
   [action]
@@ -58,11 +63,13 @@
 
 (defn browse-nzbs
   "grab a chunk of the latest nzbs in a category starting at offset"
-  [category offset & {:keys [q ext]}]
-  (let [api-key (str/trim (slurp "resources/api.txt"))
-        theurl (cl-format nil "https://api.nzb.su/api?t=search&cat=~a&apikey=~a&o=xml&extended=1&offset=~d&limit=100~:[~;~:*&q=~a~]~:[~;&extended=1~]"
-                          category api-key offset (and q (str/replace q #" " "%20")) ext)
+  [category offset & {:keys [q ext service verbose]}]
+  (let [[api-url api-key] (get api-cred (or service api-default))
+        api-key (str/trim (slurp api-key))
+        theurl (cl-format nil "~a/api?t=search&cat=~a&apikey=~a&o=xml&extended=1&offset=~d&limit=100~:[~;~:*&q=~a~]~:[~;&extended=1~]"
+                          api-url category api-key offset (and q (str/replace q #" " "%20")) ext)
         theresult (throttled-api theurl)
+        dummy (if verbose (cl-format true "call:~%~a~%result:~%~a~%" theurl theresult))
         thezip (zip/xml-zip theresult )
         result (for [item (xml-> thezip :channel :item)]
                  (into {} (map #(cond

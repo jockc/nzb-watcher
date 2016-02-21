@@ -47,14 +47,15 @@ includes:
 excludes:
 *  pattern_regex - any match on these patterns is skipped
 
-Put your api keys in the resources dir:
+Put your api keys in the resources dir;  setup the map in api.clj to point to your nzb service(s) and api key paths;
 
-api.txt for your newznab api key
+Also in resources dir:
 thetvdbapi.txt - for your thetvdb api key
 
 Create your categories; then create your includes.   You can use api/lookup_series_id() from the REPL to get the thetvdb id for a show.
 
-There is a function called backfill() that will attempt to load an entire series.  You currently must call this from the REPL.  Backfill will try to load the season/episode with the most downloads.  If there are any failures, it will be detected during gather phase (the gather will not find the file(s)).  Rerunning backfill() will try to load any missing files.
+There is a function called backfill() that will attempt to load an entire series.  You currently must call this from the REPL.  Clear out the nzbs dir first.  For each episode backfill() will load the nzb file which has the most downloads (as reported by the nzb service) and which has not already been tried (i.e. in a previous backfill run for this series).  Once backfill returns, look in the nzbs directory.  Delete any incorrect files (wrong language, full season instead of single episode, etc).  Then zip the nzbs dir and manually copy to the hot folder (where sabnzbd watches).  Once sabnzbd is finished download and unpacking everything, run gather.sh.
+If there were any failures in the download, it will be detected during gather phase (the gather will not find the file(s)). Gather will update the database to reflect these failures.   Rerunning backfill() will then try to load any missing files.  These steps may need to be repeated a few times.  Also note that many services have a daily cap on downloads which you may hit when you are doing backfills.  When this happens you will start seeing nzbs with 0 bytes.  Just delete those zero byte nzbs, and wait until your download cap is reset before continuing.  
 
 
 ## Options
