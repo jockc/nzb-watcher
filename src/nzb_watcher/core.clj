@@ -104,15 +104,16 @@
   
 (defn backfill
   "search back in category for all files matching a include regex.  (assumes tv show).  find most downloaded per season/episode and download it.  record what was downloaded"
-  [include-id & {:keys [cat service] :or {cat "5040"}}]
-  (let [query-string (get-query-string include-id)]
+  [include-id & {:keys [cat service verbose qstr once] :or {cat "5040"}}]
+  (let [query-string (or qstr (get-query-string include-id))]
     (letfn [(get [offs] (api/browse-nzbs cat offs :q query-string :ext true :service service))]
       (let [eps (loop [eps []
                        offs 0]
-                  (let [current (get offs)]
-                    (if-not (empty? current)
-                      (recur (conj eps current) (+ offs 100))
-                      (apply concat eps))))
+                  (let [current (get offs)
+                        new (conj eps current)]
+                    (if-not (or once (empty? current))
+                      (recur new (+ offs 100))
+                      (apply concat new))))
             crap-removed (filter #(re-find (re-pattern (str "(?i)" (str/replace query-string #" " "."))) (% :title)) eps)
             unloaded (remove #(check-episode-loaded include-id (first (% :episode))) crap-removed)
             untried (remove #(check-backfill-attempt (% :title)) unloaded)
@@ -264,6 +265,14 @@
   (count (str/split (.getPath (File. str)) #"\\|/"))
 )
 
+(defn find-biggest
+  "assumes biggest file in the dir tree is the media file"
+  [dirpath]
+  (let [biggest-full (->> dirpath File. file-seq (sort-by #(.length %)) reverse first)
+        biggest-name (.getName biggest-full)
+        biggest-ext (last (str/split biggest-name #"\."))]
+    [biggest-full biggest-name biggest-ext]))
+
 (defn gather
   "go thru the downloaded dirs and pull out the biggest media file.  rename it and collect to a target dir"
   []
@@ -284,9 +293,7 @@
                                          (re-find #"\.([0-9][0-9])\.([0-9][0-9]\.[0-9][0-9])\." dirname))  ; ##.##.## form
                   ep-tag (cl-format nil "S~2,'0dE~2,'0d" season episode)
                   ep-name (and season (lookup-episode-name thetvdbid (parse-int season) (parse-int episode)))
-                  biggest (->> dirpath File. file-seq (sort-by #(.length %)) reverse first)
-                  biggest-name (.getName biggest)
-                  biggest-ext (last (str/split biggest-name #"\."))
+                  [biggest-full biggest-name biggest-ext] (find-biggest dirpath)
                   target-name (if thetvdbid
                                 (cl-format nil "~a.S~aE~a.~:[~;~:*~a.~]~a" (or prefix target) season episode ep-name biggest-ext)
                                 (str dirname "." biggest-ext))
@@ -302,8 +309,8 @@
                                   #(delete-backfill dirname))
                    (logged-action (format "(maybe) creating target dir %s" target-dest)
                                   #(if target (mkdirp (.getPath target-dest))))
-                   (logged-action (format "shell call to mv %s %s" (.getPath biggest) (.getPath target-path))
-                                  #(sh "mv" (.getPath biggest) (.getPath target-path)))
+                   (logged-action (format "shell call to mv %s %s" (.getPath biggest-full) (.getPath target-path))
+                                  #(sh "mv" (.getPath biggest-full) (.getPath target-path)))
                    (logged-action (format "shell call to rm -fr %s" dirpath)
                                   #(sh "rm" "-fr" dirpath))
                    ))))))
