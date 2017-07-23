@@ -63,11 +63,14 @@
 
 (defn browse-nzbs
   "grab a chunk of the latest nzbs in a category starting at offset"
-  [category offset & {:keys [q ext service verbose]}]
+  [category offset & {:keys [q ext service verbose rageid]}]
   (let [[api-url api-key] (get api-cred (or service api-default))
         api-key (str/trim (slurp api-key))
-        theurl (cl-format nil "~a/api?t=search&cat=~a&apikey=~a&o=xml&extended=1&offset=~d&limit=100~:[~;~:*&q=~a~]~:[~;&extended=1~]"
-                          api-url category api-key offset (and q (str/replace q #" " "%20")) ext)
+        [searchtype searchpart] (cond rageid ["tvsearch" (cl-format nil "&rid=~a" rageid)]
+                                      q ["search" (cl-format nil "&q=~a" q)]
+                                      :else ["search" ""])
+        theurl  (cl-format nil "~a/api?t=~a&cat=~a&apikey=~a&o=xml&extended=1&offset=~d&limit=100~:[~;&extended=1~]~a"
+                          api-url searchtype category api-key offset ext searchpart)
         theresult (throttled-api theurl)
         dummy (if verbose (cl-format true "call:~%~a~%result:~%~a~%" theurl theresult))
         thezip (zip/xml-zip theresult )
@@ -90,6 +93,6 @@
       (let [thezip (zip/xml-zip theresult)]
         (doall (map update-fn 
                     (iterate identity thetvdbid)
-                    (map parse-int (xml-> thezip :Episode :Combined_season text))
-                    (map parse-int (xml-> thezip :Episode :Combined_episodenumber text))
+                    (map parse-int (xml-> thezip :Episode :SeasonNumber text))
+                    (map parse-int (xml-> thezip :Episode :EpisodeNumber text))
                     (xml-> thezip :Episode :EpisodeName text)))))))

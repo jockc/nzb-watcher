@@ -101,12 +101,12 @@
 
 (defn get-query-string [include-id]
   (db/with-db db (:pattern (first (jdbc/query db ["select pattern from includes where id =?" include-id])))))
-  
+
 (defn backfill
   "search back in category for all files matching a include regex.  (assumes tv show).  find most downloaded per season/episode and download it.  record what was downloaded"
-  [include-id & {:keys [cat service verbose qstr once] :or {cat "5040"}}]
+  [include-id & {:keys [cat service verbose qstr once rageid] :or {cat "5040"}}]
   (let [query-string (or qstr (get-query-string include-id))]
-    (letfn [(get [offs] (api/browse-nzbs cat offs :q query-string :ext true :service service))]
+    (letfn [(get [offs] (api/browse-nzbs cat offs :q query-string :rageid rageid :ext true :service service :verbose verbose))]
       (let [eps (loop [eps []
                        offs 0]
                   (let [current (get offs)
@@ -131,6 +131,9 @@
 
 
 
+
+        
+
 (defn check-episode-info [season epnum show-id epname]
   (db/check-and-insert-fn "select episode_name from episode_info where show_id = ? and season = ? and episode_num = ? and episode_name = ?" 
                        "insert into episode_info (show_id, season,episode_num, episode_name) values (?,?,?,?)" 
@@ -148,9 +151,31 @@
             (and lookup
                  (api/populate-episode-info thetvdbid check-episode-info)
                  (lookup-episode-name thetvdbid season ep :lookup false))
-           )))))
+            )))))
 
+(defn rename-sein []
+  (with-open [out (clojure.java.io/writer "seinren.bat")]
+    (let [files (filter #(not (.isDirectory %)) (file-seq (File. "/mnt/usenet/complete/S")))]
+      (doseq [file files]
+        (let [name (.getName file)
+              [matched season ep ext] (re-find #".*S([0-9][0-9])E([0-9][0-9]).*\.([^\.]+)$" name)
+              epname (and matched (lookup-episode-name 79169 (parse-int season) (parse-int ep)))]
+          (if epname
+            (cl-format out "rename \"~a\" \"Seinfeld.S~aE~a.~a.~a\"~%" name season ep epname ext)
+            (cl-format true "epname not found in ~a~%" (.getPath file))))))))
 
+(defn rename-tv-eps [batch-file-output indir include-id]
+  (let [[prefix thetvdbid] (-> (db/db-get (cl-format nil "select id, thetvdbid, prefix from includes where id = ~a" include-id)
+                                          :id #(let [{:keys [prefix thetvdbid]} %] [prefix thetvdbid])) vals ffirst)]
+    (with-open [out (clojure.java.io/writer batch-file-output)]
+      (let [files (filter #(not (.isDirectory %)) (file-seq (File. indir)))]
+        (doseq [file files]
+          (dlet [name (.getName file)
+                [matched season ep ext] (re-find #".*S([0-9][0-9])E([0-9][0-9]).*\.([^\.]+)$" name)
+                epname (and matched (lookup-episode-name thetvdbid (parse-int season) (parse-int ep)))]
+            (if epname
+              (cl-format out "rename \"~a\" \"~a.S~aE~a.~a.~a\"~%" name prefix season ep epname ext)
+              (cl-format true "epname not found in ~a~%" (.getPath file)))))))))
 
 (defn continue-nzb
   "2nd round of nzb checks"
@@ -188,7 +213,7 @@
   (log/info (cl-format nil "processing category ~a" category))
   (loop [offset 0
          set-latest? true]
-    (let [nzbs-batch (api/browse-nzbs category offset)
+    (let [nzbs-batch (api/browse-nzbs category offset :verbose true)
           sorted-dates (sort t/after? (map #(get % :pubdate) nzbs-batch))
           latest-date (first sorted-dates)
           earliest-date (last sorted-dates)]
@@ -334,3 +359,5 @@
       (gather)
       (watch))
     ))
+
+
